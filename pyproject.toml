@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "simulation-crossroad"
+version = "0.1.0"
+description = "Event driven simulation of the crossroad."
+authors = ["FandaCmuchar <fanda.cmuchar@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+[tool.poetry.group.dev.dependencies]
+simpy = "^4.1.1"
+numpy = "^1.26.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
