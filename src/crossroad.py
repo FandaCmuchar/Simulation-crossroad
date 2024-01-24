@@ -3,6 +3,12 @@ from graphics import *
 import simpy
 import random
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
+from enum import IntEnum
+from collections import defaultdict, Counter, OrderedDict
+from rich.progress import track
+import argparse
 
 directions = ['N', 'E', 'S', 'W']
 start_pos = {'N': [0, 5], 'S': [11, 6], 'E': [5, 11], 'W': [6, 0]}
@@ -11,10 +17,28 @@ crossroad_entry = {'N': [4, 5], 'S': [7, 6], 'E': [5, 7], 'W': [6, 4]}
 turning_left_point = {'N': [6, 5], 'S': [5, 6], 'E': [5, 5], 'W': [6, 6]}
 turning_left = {'N': 'E', 'S': 'W', 'E': 'S', 'W': 'N'}
 
+class TrafficLightType(IntEnum):
+    RANDOM_WAIT_TIME = 0
+    STATIC_WAIT_TIME = 1
+    COUNT_PREFERRED = 2
+    TIME_SPEND_PREFERRED = 3
+
 
 class Crossroad(Logger):
-    """Simulation environment."""
+    """Simulation environment representing a crossroad.
 
+    Attributes:
+        road (List[List[int]]): A 2D list representing the road where cars move. It tracks the positions of cars on the crossroad.
+        gr (Graphics): An instance of the graphics class representing the graphical environment.
+        lights (Dict[str, str]): A dictionary representing the current state of traffic lights for each direction.
+                                 Possible values are 'r' (red), 'g' (green), and 'o' (orange).
+        lights_events (List[Event]): A list containing events for each traffic light to control their switching.
+        cars_spawn_queue (Dict[str, List[Car]]): A dictionary representing the queue of cars waiting to enter the crossroad for each direction.
+        cars (Dict[int, Car]): A dictionary containing instances of the Car class with their unique identifiers as keys.
+        cars_in_queue (Dict[str, int]): A dictionary representing the count of cars currently waiting in the queue for each direction.
+        cars_before_lights (Dict[str, int]): A dictionary representing the count of cars currently positioned before the traffic lights for each direction.
+    """
+     
     def __init__(self, graphics, factor=1.3, logEnabled=True):
         Logger.__init__(self, logEnabled)
         self.road = [[0 for i in range(12)] for j in range(12)]  # represents environment where cars move
@@ -119,11 +143,13 @@ class Car(Entity):
         while self.env.road[s[0]][s[1]] != 0:
             yield self.env.timeout(self.speed / 2)  # else look for space
         
+        self.env.cars_in_queue[self.start] -= 1
+
         if isinstance(self.env, RealtimeCrossroad):
             self.env.gr.display_car(self.start, "red", self.id, 'L' if self.turning_left else '')
-            self.env.gr.change_car_queue_text(self.start, self.env.cars_in_queue[self.start])
+            text = self.env.cars_in_queue[self.start] if self.env.cars_in_queue[self.start] > 0 else self.start
+            self.env.gr.change_car_queue_text(self.start, text)
 
-        self.env.cars_in_queue[self.start] -= 1
         
         self.env.road[s[0]][s[1]] = 1
         self.curr_pos = s
@@ -223,7 +249,7 @@ class CarFactory(Entity):
         self.exp_lambda = exp_lambda
         self.simulation_len = simulation_len
         self.seed = seed
-        self.car_count = simulation_len / 1.5
+        self.car_count = simulation_len * 0.8
 
     def lifetime(self):
         """Spawns cars with exponential distributed time steps.
@@ -247,17 +273,17 @@ class TrafficLights(Entity):
     def __init__(self, env, gr, mode):
         super().__init__(env)
         self.gr = gr
-        self.mode = mode % 4
+        self.mode = mode
 
     def get_wait_time(self):
         """Chooses waiting time in order to operation mode
         :return: waiting time
         """
-        if self.mode == 0:
+        if self.mode == TrafficLightType.RANDOM_WAIT_TIME:
             return random.uniform(2, 9)
-        elif self.mode == 1:
+        elif self.mode == TrafficLightType.STATIC_WAIT_TIME:
             return 6
-        elif self.mode == 2 or self.mode == 3:
+        elif self.mode == TrafficLightType.COUNT_PREFERRED or self.mode == TrafficLightType.TIME_SPEND_PREFERRED:
             return 0.5
 
     def count_submeans(self):
@@ -294,14 +320,14 @@ class TrafficLights(Entity):
         c1 = 'r'
         while True:
 
-            if self.mode == 0 or self.mode == 1:
+            if self.mode == TrafficLightType.RANDOM_WAIT_TIME or self.mode == TrafficLightType.STATIC_WAIT_TIME:
                 lights_idx = random.randint(0, 1)
                 c = 'r' if random.randint(0, 1) == 0 else 'g'
                 c1 = 'g' if c == 'r' else 'r'
                 if c == self.env.lights[directions[lights_idx]]:
                     c = 'g' if c != 'g' else 'r'
                     c1 = 'g' if c == 'r' else 'r'
-            elif self.mode == 2:
+            elif self.mode == TrafficLightType.COUNT_PREFERRED:
                 NS = self.env.cars_before_lights['N'] + self.env.cars_before_lights['S']
                 WE = self.env.cars_before_lights['W'] + self.env.cars_before_lights['E']
                 if abs(NS - WE) >= 6:
@@ -314,7 +340,7 @@ class TrafficLights(Entity):
                 if c == self.env.lights[directions[lights_idx]]:
                     yield self.env.timeout(self.get_wait_time() * 5)
                     continue
-            elif self.mode == 3:
+            elif self.mode == TrafficLightType.TIME_SPEND_PREFERRED:
                 NS = self.env.cars_before_lights['N'] + self.env.cars_before_lights['S']
                 WE = self.env.cars_before_lights['W'] + self.env.cars_before_lights['E']
                 NS_mean, WE_mean = self.count_submeans()
@@ -391,11 +417,8 @@ class TrafficLights(Entity):
             gr.traffic_lights[light2].light(col=c)
 
 
-def count_statistics(cars):
-    """Count basic statistical information
-    1. mean time for car to leave crossroad
-    2. maximum waiting time before leaving the crossroad
-    3. number of cars that successfully leaved crossroad
+def count_statistics(cars: list[Car]):
+    """Count basic statistics
 
     :param cars: list of cars
     :return: string with basic statistical information
@@ -409,39 +432,97 @@ def count_statistics(cars):
             "finished_cars_percentage": len(car_times) / len(cars)}
 
 
+def get_cumulative_finished_car_count(cars: list[Car]):
+    car_times = [c.finish_time - c.start_time for c in cars if c.finish_time > 0]
+    sorted_finish_times = sorted(car_times)
+    cumulative_counts = [i + 1 for i in range(len(sorted_finish_times))]
+    
+    return sorted_finish_times, cumulative_counts
+
+
 if __name__ == '__main__':
-    simulation_len = 28
-    # window = tk.Tk()
-    # gr = Graphics(window, size=50)
-    gr = None
+    parser = argparse.ArgumentParser(description='Crossroad simulation with graphical or statistical mode.')
+    import argparse
 
-    """# sim = RealtimeCrossroad(gr)
-    sim = FastSimulatedCrossroad(graphics=None)
-    CarFactory(sim, exp_lambda=2, seed=42, simulation_len=simulation_len)
-    TrafficLights(sim, gr, mode=3)
-    sim.run(simulation_len)
-    print(count_statistics(sim.cars.values()))"""
+    parser = argparse.ArgumentParser(description='Crossroad simulation with graphical or statistical mode.')
 
+    # Statistics mode options
+    parser.add_argument("-s", "--stats", dest="count_statistics", action="store_true", default=False,
+                        help="Enable statistical mode to collect simulation data.")
+    parser.add_argument("-st", "--stats-sim-time", dest="st_sim_len", type=int, default=75,
+                        help="Set the simulation time in seconds for statistical mode (default: 75 seconds).")
+    parser.add_argument("-sn", "--stats-sim-rounds", dest="st_sim_rounds", type=int, default=300,
+                        help="Set the number of simulation rounds for statistical mode (default: 300 rounds).")
 
-    # Comparison between traffic lights modes
-    simulation_len = 40
-    counts = []
-    rounds = 3
-    seeds = [random.randint(0, 1000) for i in range(rounds)]
-    for i in range(rounds):
-        modes_res = []
-        for mode in range(4):
-            sim = FastSimulatedCrossroad(gr, 0.25, logEnabled=False)
-            cf = CarFactory(sim, 2, seeds[i], simulation_len)
-            tl = TrafficLights(sim, gr, mode)
+    # Graphical mode options
+    parser.add_argument("-gsl", "--graphical-sim-len", dest="gr_sim_len", type=int, default=30,
+                        help="Set the simulation time in seconds for graphical mode (default: 30 seconds).")
+    parser.add_argument("-tl", "--traffic-light-mode", dest="traffic_light_mode", type=int, choices=[mode.value for mode in TrafficLightType],
+                        default=TrafficLightType.TIME_SPEND_PREFERRED.value,
+                        help="Set the traffic lights mode. Choose from: 0 (Random wait time), 1 (Static wait time 6 seconds), 2 (Car count preferred), 3 (Time spend preferred). Default is 3.")
+    parser.add_argument("-seed", dest="random_seed", type=int, default=random.randint(0, 10000),
+                    help="Set the seed value for random number generation to generate cars. Defaults to a random integer between 0 and 10000 if not provided.")
+    
+    args = parser.parse_args()
 
-            sim.run(simulation_len)
-            modes_res.append(str(count_statistics(sim.cars.values())) + f" {mode}")
-        counts.append(modes_res)
-        counts.append('')
+    if not args.count_statistics:
+        window = tk.Tk()
+        gr = Graphics(window, size=50)
+        sim = RealtimeCrossroad(gr)
+        CarFactory(sim, exp_lambda=2, seed=args.random_seed, simulation_len=args.gr_sim_len)
+        TrafficLights(sim, gr, mode=args.traffic_light_mode)
+        sim.run(args.gr_sim_len)
+        window.destroy()
 
-    print("Results")
-    for i in counts:
-        for j in i:
-            print(j)
-        print()
+    elif args.count_statistics:
+        # Comparison between traffic lights modes
+        gr = None
+        simulation_len = 75
+        counts = []
+        rounds = 500
+        seeds = [random.randint(0, rounds ** 2) for _ in range(rounds)]
+        crossroad_time_spent = defaultdict(list)
+
+        for i in track(range(rounds), description="Running crossroad simulation"):
+            for mode in TrafficLightType:
+                sim = FastSimulatedCrossroad(gr, 0.25, logEnabled=False)
+                cf = CarFactory(sim, 2, seeds[i], simulation_len)
+                tl = TrafficLights(sim, gr, mode)
+
+                sim.run(simulation_len)
+                sorted_crossroad_times = sorted([car.finish_time - car.start_time for car in sim.cars.values() if car.finish_time > 0])
+                crossroad_time_spent[mode].extend(sorted_crossroad_times)
+
+        fig1, ax1 = plt.subplots()
+        fig2, ax2 = plt.subplots()
+        crossroad_time_spent_mean = defaultdict(list)
+        crossroad_time_spent_std = []
+        
+        for key, val in crossroad_time_spent.items():
+            sorted_finished_times = sorted(val)
+            counter = Counter(sorted_finished_times)
+            times_counts = list(counter.values())
+            cum_sum = np.cumsum(times_counts)
+            ax1.plot(list(OrderedDict.fromkeys(sorted_finished_times)), cum_sum / rounds, label=key.name)
+            crossroad_time_spent_mean[key.name] = np.mean(val)
+            crossroad_time_spent_std.append(np.std(val))
+        
+        # Plot for the first subplot
+        ax1.set_xlabel('Finish Time', fontsize=14)
+        ax1.set_ylabel('Finished cars', fontsize=14)
+        ax1.set_title('Cumulative time spent on crossroad', fontsize=20)
+        # Include grid settings for the first subplot
+        ax1.grid(True, linestyle='--', alpha=0.9, markevery=0.5)
+        ax1.legend()
+
+        # Plot mean time spent on crossroad
+        colormap =  plt.cm.cividis
+        ax2.bar(crossroad_time_spent_mean.keys(), crossroad_time_spent_mean.values(), yerr=crossroad_time_spent_std, ecolor="black", color=colormap(np.linspace(0, 1, len(crossroad_time_spent_mean.keys()))))
+        ax2.set_xlabel('Traffic lights mode', fontsize=15)
+        ax2.set_ylabel('Mean time', fontsize=15)
+        ax2.set_title('Mean time spent on crossroad', fontsize=20)
+        ax2.tick_params(axis='x', labelsize=12)
+        ax2.grid(True, linestyle='--', alpha=0.9, markevery=0.05)
+        ax2.yaxis.set_major_locator(MultipleLocator(4))
+
+        plt.show()
