@@ -36,7 +36,7 @@ poetry run python src/crossroad.py [options]
 
 #### Options
 ##### Statistical Mode
-- `-s`, `--stats`: Enable statistical mode to collect simulation data.
+- `-s`, `--stats`: Enable statistical mode to collect simulation data. (turns off graphical mode)
 - `-st`, `--stats-sim-time`: Set the simulation time in seconds for statistical mode (default: 75 seconds).
 - `-sn`, `--stats-sim-rounds`: Set the number of simulation rounds for statistical mode (default: 300 rounds).
 ##### Graphical Mode
