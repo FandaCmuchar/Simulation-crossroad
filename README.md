@@ -13,17 +13,17 @@ Make sure you have Python and Poetry installed. If not, you can install Poetry b
 1. Clone the repository to your local machine:
 
    ```bash
-   git clone https://github.com/your-username/crossroad-simulation.git
+   git clone https://github.com/FandaCmuchar/Simulation-crossroad
    ```
 
 2. Navigate to the project directory:
    ```bash
-    cd crossroad-simulation
+    cd Simulation-crossroad
    ```
 
 3. Install the project dependencies using Poetry:
     ```bash
-        poetry install
+    poetry install
     ```
 
     This command installs all the required packages specified in the `pyproject.toml` file.
@@ -31,7 +31,7 @@ Make sure you have Python and Poetry installed. If not, you can install Poetry b
 ### Usage
 To run the simulation, use the following command in your terminal:
 ```bash
-    poetry run python src/crossroad.py [options]
+poetry run python src/crossroad.py [options]
 ```
 
 #### Options
@@ -47,12 +47,12 @@ To run the simulation, use the following command in your terminal:
 ### Examples
 #### Run Statistical Mode
 ```bash
-    poetry run python src/crossroad.py -s -st 100 -sn 500
+poetry run python src/crossroad.py -s -st 100 -sn 500
 ```
 This command runs the simulation in statistical mode with a simulation time of 100 seconds and 500 rounds.
 
 #### Run Graphical Mode
 ```bash
-    poetry run python src/crossroad.py -gsl 60 -tl 2 -seed 1234
+poetry run python src/crossroad.py -gsl 60 -tl 2 -seed 1234
 ```
 This command runs the simulation in graphical mode with a simulation time of 60 seconds, traffic lights mode set to Car count preferred (2), and a specific seed value of 1234 for random number generation.
