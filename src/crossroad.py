@@ -42,42 +42,68 @@ class Crossroad(Logger):
     def __init__(self, graphics, factor=1.3, logEnabled=True):
         Logger.__init__(self, logEnabled)
         self.road = [[0 for i in range(12)] for j in range(12)]  # represents environment where cars move
-        self.gr = graphics
-        self.lights = {'N': 'r', 'E': 'r', 'S': 'r', 'W': 'r'}
-        self.lights_events = [self.event(), self.event()]
-        self.cars_spawn_queue = {'N': [], 'E': [], 'S': [], 'W': []}
-        self.cars = {}
-        self.cars_in_queue = {'N': 0, 'E': 0, 'S': 0, 'W': 0}
-        self.cars_before_lights = {'N': 0, 'E': 0, 'S': 0, 'W': 0}
+        Logger.__init__(self, logEnabled)
+        self.road: list[list[int]] = [[0 for i in range(12)] for j in range(12)]  # represents environment where cars move
+        self.gr: Graphics = graphics
+        self.lights: dict[str, str] = {'N': 'r', 'E': 'r', 'S': 'r', 'W': 'r'}
+        self.lights_events: list = [self.event(), self.event()]
+        self.cars_spawn_queue: dict[str, list[Car]] = {'N': [], 'E': [], 'S': [], 'W': []}
+        self.cars: dict[int, Car] = {}
+        self.cars_in_queue: dict[str, int] = {'N': 0, 'E': 0, 'S': 0, 'W': 0}
+        self.cars_before_lights: dict[str, int] = {'N': 0, 'E': 0, 'S': 0, 'W': 0}
 
 class RealtimeCrossroad(Crossroad, simpy.rt.RealtimeEnvironment, Logger):
-    def __init__(self, graphics, factor=1.3, logEnabled=True):
+    """A real-time simulation environment representing a crossroad.
+
+    Attributes:
+        graphics: Graphics
+            An instance of the graphics class representing the graphical environment.
+        factor: float
+            A factor affecting the simulation (default is 1.3).
+        logEnabled: bool
+            A flag indicating whether logging is enabled (default is True).
+    """
+    
+    def __init__(self, graphics: Graphics, factor: float = 1.3, logEnabled: bool = True):
         super().__init__(graphics, factor, logEnabled)
         simpy.rt.RealtimeEnvironment.__init__(self, factor=factor)
 
 class FastSimulatedCrossroad(Crossroad, simpy.Environment, Logger):
-    def __init__(self, graphics, factor=1.3, logEnabled=True):
+    """A fast simulated simulation environment representing a crossroad.
+
+    Attributes:
+        graphics: Graphics
+            An instance of the graphics class representing the graphical environment.
+        factor: float
+            A factor affecting the simulation (default is 1.3).
+        logEnabled: bool
+            A flag indicating whether logging is enabled (default is True).
+    """
+    
+    def __init__(self, graphics: Graphics, factor: float = 1.3, logEnabled: bool = True):
         super().__init__(graphics, factor, logEnabled)
         simpy.Environment.__init__(self)
 
 class Car(Entity):
     """Entity that navigates itself to its finish location."""
 
-    def __init__(self, env, start, target_loc):
+    def __init__(self, env: simpy.Environment | simpy.rt.RealtimeEnvironment, start: list[int, int], target_loc: list[int, int]):
         super().__init__(env)
-        self.start = start
-        self.target_loc = target_loc
-        self.speed = 0.4
-        self.curr_pos = [-1, -1]
-        self.progress = 0
-        self.turning_left = True if turning_left[self.start] == self.target_loc else False
-        self.start_time = self.env.now
-        self.finish_time = -1
+        self.start: list[int, int] = start
+        self.target_loc: list[int, int] = target_loc
+        self.speed: float = 0.4
+        self.curr_pos: list[int] = [-1, -1]
+        self.progress: float = 0
+        self.turning_left: bool = turning_left[start] == target_loc
+        self.start_time: float = self.env.now
+        self.finish_time: float = -1
         self.spawn_event = self.env.event()
 
-    def find_targets(self):
+    def find_targets(self) -> list[list[int]]:
         """Finds main target points that each car must pass through.
-        :return: list of 3 points [x,y].
+
+        Returns:
+            list of 3 points [x, y].
         """
         targets = [[0, 0], [0, 0], [0, 0]]
         targets[0] = crossroad_entry[self.start]
@@ -94,10 +120,15 @@ class Car(Entity):
 
         return targets
 
-    def drive(self, target):
+    def drive(self, target: tuple[int, int]):
         """Move car on the 2D list and also move graphical representation of the car.
-        :param target: target direction with 2 coordinates [x, y]
-        :return: None
+
+        Parameters:
+            target: tuple[int, int]
+                The target direction with 2 coordinates [x, y].
+
+        Returns:
+            None
         """
         direction = self.get_dir(self.curr_pos, target)
         while self.curr_pos != target:
@@ -120,8 +151,8 @@ class Car(Entity):
             self.curr_pos = [self.curr_pos[0] + direction[0], self.curr_pos[1] + direction[1]]
             yield self.env.timeout(self.speed / 20)
 
-    def lifetime(self):
-        """Simulates car behaviour.
+    def lifetime(self) -> None:
+        """Simulates car behavior.
         Car has 4 main points that must pass. With simulation of traffic rules.
         1. Entering the crossroad
         2. Arrive before traffic lights
@@ -196,8 +227,19 @@ class Car(Entity):
         if isinstance(self.env, RealtimeCrossroad):
             self.env.gr.delete_car(self.id)
 
-    #  Returns one of the four directions [-1, 0], [1, 0], [0, 1], [0, -1]
-    def get_dir(self, from_loc, to_loc):
+    def get_dir(self, from_loc: list[int], to_loc: list[int]) -> list[int]:
+        """Determines the direction from one location to another.
+
+        Parameters:
+            from_loc: list[int]
+                The starting location represented as a list [x, y].
+            to_loc: list[int]
+                The target location represented as a list [x, y].
+
+        Returns:
+            list[int]
+                A list representing the direction, one of the four directions [-1, 0], [1, 0], [0, 1], [0, -1].
+        """
         direction = [1, 0] if from_loc[1] == to_loc[1] else [0, 1]
         if from_loc[0] > to_loc[0] or from_loc[1] > to_loc[1]:
             direction[0] = -1 * direction[0]
@@ -205,9 +247,11 @@ class Car(Entity):
 
         return direction
 
-    def free_to_go(self):
-        """Detect situation on the road if car is free to go.
-        :return: bool - road is free
+    def free_to_go(self) -> bool:
+        """Detects situation on the road if car is free to go.
+
+        Returns:
+            bool - True if the road is free, False otherwise.
         """
         is_free = True
         if self.turning_left:  # Turning left so cars ahead have higher priority
@@ -245,16 +289,29 @@ class CarFactory(Entity):
     """Entity that creates cars."""
 
     def __init__(self, env, exp_lambda, seed, simulation_len):
-        super().__init__(env)
-        self.exp_lambda = exp_lambda
-        self.simulation_len = simulation_len
-        self.seed = seed
-        self.car_count = simulation_len * 0.8
+        """
+        Initialize the CarFactory.
 
-    def lifetime(self):
+        Parameters:
+            env: simpy.Environment
+                The simulation environment.
+            exp_lambda: float
+                The exponential distribution parameter for car creation.
+            seed: int
+                The seed for the random number generator.
+            simulation_len: int
+                The total duration of the simulation.
+        """
+        super().__init__(env)
+        self.exp_lambda: float = exp_lambda
+        self.simulation_len: int = simulation_len
+        self.seed: int = seed
+        self.car_count: int = int(simulation_len * 0.8)
+
+    def lifetime(self) -> None:
         """Spawns cars with exponential distributed time steps.
         Chooses uniformly where the car spawns and where is its finish.
-        :return:
+        :return: None
         """
         random.seed(self.seed)
         while True:
@@ -271,13 +328,26 @@ class CarFactory(Entity):
 class TrafficLights(Entity):
     """Entity that switches lights."""
     def __init__(self, env, gr, mode):
-        super().__init__(env)
-        self.gr = gr
-        self.mode = mode
+        """
+        Initialize the TrafficLights.
 
-    def get_wait_time(self):
-        """Chooses waiting time in order to operation mode
-        :return: waiting time
+        Parameters:
+            env: simpy.Environment
+                The simulation environment.
+            gr: Graphics
+                An instance of the graphics class representing the graphical environment.
+            mode: TrafficLightType
+                The operation mode of the traffic lights.
+        """
+        super().__init__(env)
+        self.gr: Graphics = gr
+        self.mode: TrafficLightType = mode
+
+    def get_wait_time(self) -> float:
+        """Chooses waiting time in order to operation mode.
+
+        Returns:
+            float: Waiting time.
         """
         if self.mode == TrafficLightType.RANDOM_WAIT_TIME:
             return random.uniform(2, 9)
@@ -286,9 +356,11 @@ class TrafficLights(Entity):
         elif self.mode == TrafficLightType.COUNT_PREFERRED or self.mode == TrafficLightType.TIME_SPEND_PREFERRED:
             return 0.5
 
-    def count_submeans(self):
+    def count_submeans(self) -> tuple[float, float]:
         """Count waiting time mean for horizontal and vertical part of crossroad.
-        :return: mean for North and South, mean for West and East part
+
+        Returns:
+            Tuple[float, float]: Mean for North and South, mean for West and East part.
         """
         NS_mean = WE_mean = 0
         NS_cars = WE_cars = 0
@@ -306,7 +378,7 @@ class TrafficLights(Entity):
 
         return NS_mean, WE_mean
 
-    def lifetime(self):
+    def lifetime(self) -> None:
         """Represents lifetime of traffic lights. Switches lights with given strategy.
         Traffic lights strategy.
         0 - random switching time
@@ -376,7 +448,7 @@ class TrafficLights(Entity):
 
             yield self.env.timeout(self.get_wait_time())
 
-    def prepare_for_change(self, light1, light2, c, lights_idx):
+    def prepare_for_change(self, light1: str, light2: str, c: str, lights_idx: int) -> None:
         """Prepares for light change - switches traffic lights to orange value
         :param light1: character that represents light side ('N' - north, 'W','S','E')
         :param light2: character that is opposite to first position
@@ -401,7 +473,7 @@ class TrafficLights(Entity):
         self.env.lights[light1] = 'o'
         self.env.lights[light2] = 'o'
 
-    def change_lights(self, light1, light2, c, lights_idx):
+    def change_lights(self, light1: str, light2: str, c: str, lights_idx: int) -> None:
         """Change lights color to red/green."""
         if c == 'g':
             self.env.lights_events[lights_idx].succeed()
@@ -417,33 +489,7 @@ class TrafficLights(Entity):
             gr.traffic_lights[light2].light(col=c)
 
 
-def count_statistics(cars: list[Car]):
-    """Count basic statistics
-
-    :param cars: list of cars
-    :return: string with basic statistical information
-    """
-    car_times = [c.finish_time - c.start_time for c in cars if c.finish_time > 0]
-    
-    return {"mean": np.mean(car_times), 
-            "std": np.std(car_times), 
-            "min": min(car_times), 
-            "max": max(car_times), 
-            "finished_cars_percentage": len(car_times) / len(cars)}
-
-
-def get_cumulative_finished_car_count(cars: list[Car]):
-    car_times = [c.finish_time - c.start_time for c in cars if c.finish_time > 0]
-    sorted_finish_times = sorted(car_times)
-    cumulative_counts = [i + 1 for i in range(len(sorted_finish_times))]
-    
-    return sorted_finish_times, cumulative_counts
-
-
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Crossroad simulation with graphical or statistical mode.')
-    import argparse
-
     parser = argparse.ArgumentParser(description='Crossroad simulation with graphical or statistical mode.')
 
     # Statistics mode options

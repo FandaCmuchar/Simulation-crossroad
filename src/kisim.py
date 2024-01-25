@@ -1,67 +1,53 @@
-import simpy
-
-
-class Logger():
-    def __init__(self, logEnabled = True):
-        self.logEnabled = logEnabled
-
-    def log_off(self):
-        self.logEnabled = False
-
-    def log_on(self):
-        self.logEnabled = True
-
-    def log(self, text, entity = None):
-        if self.logEnabled:
-            print(f"{self.now:8.3f}: {text}\t{f'({entity})' if entity is not None else ''}")
-
-
-class Environment(simpy.Environment):
-    def __init__(self, logEnabled=True):
-        super().__init__()
-        self.logEnabled = logEnabled
-
-    def log_off(self):
-        self.logEnabled = False
-
-    def log_on(self):
-        self.logEnabled = True
-
-    def log(self, text, entity = None):
-        if self.logEnabled:
-            print(f"{self.now:8.1f}: {text}\t {f'({entity})' if entity is not None else ''}")
-
+from simpy import Environment
+from simpy.rt import RealtimeEnvironment
 
 class Entity:
-    counter = 0
+    counter: int = 0
 
-    def __init__(self, env):
+    def __init__(self, env: Environment | RealtimeEnvironment) -> None:
         self.__class__.counter += 1
-        self.id = self.__class__.counter
-        self.env = env
+        self.id: int = self.__class__.counter
+        self.env: Environment | RealtimeEnvironment = env
         self.env.process(self.lifetime())
 
-    def log(self, text):
+    def log(self, text: str) -> None:
         self.env.log(text, self)
 
-    def __str__(self):
-        return f"{self.__class__.__name__}:{self.id}"
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}:{self.id:02d}"
 
-    def lifetime(self):
-        raise NotImplemented("abstract method")
+    def lifetime(self) -> None:
+        raise NotImplementedError("abstract method")
 
+class Logger:
+    """Handles logging functionality.
 
-class Collector(Entity):
-    def __init__(self, env, interval):
-        super().__init__(env)
-        self.interval = interval
-        self.times = []
+    Attributes:
+        logEnabled (bool): Flag to control logging. Default is True.
+    """
 
-    def lifetime(self):
-        while True:
-            self.times.append(self.env.now)
-            self.collect()
-            yield self.env.timeout(self.interval)
+    def __init__(self, logEnabled: bool = True) -> None:
+        """Initialize the Logger.
 
-    def collect(self):
-        raise NotImplemented("abstract method")
+        Parameters:
+            logEnabled (bool): Flag to control logging. Default is True.
+        """
+        self.logEnabled: bool = logEnabled
+
+    def log_off(self) -> None:
+        """Turn off logging."""
+        self.logEnabled = False
+
+    def log_on(self) -> None:
+        """Turn on logging."""
+        self.logEnabled = True
+
+    def log(self, text: str, entity: Entity = None) -> None:
+        """Print log messages.
+
+        Parameters:
+            text (str): The log message text.
+            entity: An optional entity associated with the log message.
+        """
+        if self.logEnabled:
+            print(f"{self.now:8.3f} {f'({entity})' if entity is not None else ''}  {text}")
